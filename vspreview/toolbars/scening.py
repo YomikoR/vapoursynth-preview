@@ -340,6 +340,9 @@ class SceningToolbar(AbstractToolbar):
         add_shortcut(              Qt.Qt.Key_E,     self.add_to_list_button          .click)
         add_shortcut(              Qt.Qt.Key_R,     self.remove_last_from_list_button.click)
 
+        add_shortcut(Qt.Qt.Key_B, lambda: self.scening_list_dialog.label_lineedit.setText(
+            str(self.main.current_frame)))
+
         # FIXME: get rid of workaround
         self._on_list_items_changed = lambda *arg: self.on_list_items_changed(*arg)  # pylint: disable=unnecessary-lambda, no-value-for-parameter
 
