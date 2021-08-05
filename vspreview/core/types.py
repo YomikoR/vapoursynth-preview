@@ -819,8 +819,8 @@ class Output(YAMLObject):
             vs_pG = np.asarray(vs_frame.get_read_array(1), dtype=np.uint16)
             vs_pB = np.asarray(vs_frame.get_read_array(2), dtype=np.uint16)
             packed = np.zeros((vs_pR.shape[0], vs_pR.shape[1] * 2), dtype=np.uint16)
-            packed[:, 1::2] = 0xc000 + (vs_pR << 4) + (vs_pG >> 6)
-            packed[:, 0::2] = (vs_pG << 10) + vs_pB
+            packed[:, 1::2] = 0xc000 | ((vs_pR & 0x3ff) << 4) | ((vs_pG & 0x3ff) >> 6)
+            packed[:, 0::2] = ((vs_pG & 0x3ff) << 10) | (vs_pB & 0x3ff)
 
             frame_image = Qt.QImage(
                 packed.ctypes.data_as(ctypes.POINTER(ctypes.c_char)).contents,
