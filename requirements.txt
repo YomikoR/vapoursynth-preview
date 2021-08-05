@@ -4,4 +4,5 @@ pyqt5
 pysubs2
 pyyaml
 qdarkstyle
+numpy
 vapoursynth

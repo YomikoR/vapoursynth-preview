@@ -12,6 +12,7 @@ from   PyQt5       import Qt
 from   yaml        import YAMLObject
 import vapoursynth as     vs
 
+import numpy as np
 
 # pylint: disable=function-redefined
 
@@ -776,12 +777,6 @@ class Output(YAMLObject):
 
         vs_output = resizer(vs_output, **resizer_kwargs,
                             **self.main.VS_OUTPUT_RESIZER_KWARGS)
-        if alpha:
-            return vs_output
-        elif api4_available:
-            fmt = vs.core.query_video_format(vs.GRAY, vs.INTEGER, 32, 0, 0)
-            # convert vs.RGB24 to non-planar vs.COMPATBGR32.
-            return vs.core.akarin.Expr([vs.core.std.ShufflePlanes(vs_output, i, vs.GRAY) for i in range(3)], f'x {0x10000} * y {0x100} * + z + {0xff} {0x1000000} * +', fmt, opt=1)
 
         return vs_output
 
@@ -796,16 +791,22 @@ class Output(YAMLObject):
 
     def render_raw_videoframe(self, vs_frame: vs.VideoFrame, vs_frame_alpha: Optional[vs.VideoFrame] = None) -> Qt.QImage:
         self.cur_frame = (vs_frame, vs_frame_alpha) # keep a reference to the current frame
-        # powerful spell. do not touch
-        frame_data_pointer = ctypes.cast(
-            vs_frame.get_read_ptr(0),
-            ctypes.POINTER(ctypes.c_char * (
-                vs_frame.format.bytes_per_sample
-                * vs_frame.width * vs_frame.height))
-        )
+
+        vs_pR = np.asarray(vs_frame.get_read_array(0), dtype=np.uint8)
+        vs_pG = np.asarray(vs_frame.get_read_array(1), dtype=np.uint8)
+        vs_pB = np.asarray(vs_frame.get_read_array(2), dtype=np.uint8)
+        packed = np.full((vs_pR.shape[0], vs_pR.shape[1] * 4), 0xff, dtype=np.uint8)
+        packed[:, 2::4] = vs_pR
+        packed[:, 1::4] = vs_pG
+        packed[:, 0::4] = vs_pB
+
         frame_image = Qt.QImage(
-            frame_data_pointer.contents, vs_frame.width, vs_frame.height,
-            vs_frame.get_stride(0), Qt.QImage.Format_RGB32)
+            packed.ctypes.data_as(ctypes.POINTER(ctypes.c_char)).contents,
+            vs_pR.shape[1], # packed.ctypes.shape[1] // 4
+            vs_pR.shape[0], # packed.ctypes.shape[0]
+            packed.ctypes.strides[0],
+            Qt.QImage.Format_RGB32
+        )
 
         if vs_frame_alpha is None:
             return frame_image
