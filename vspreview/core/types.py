@@ -792,21 +792,33 @@ class Output(YAMLObject):
     def render_raw_videoframe(self, vs_frame: vs.VideoFrame, vs_frame_alpha: Optional[vs.VideoFrame] = None) -> Qt.QImage:
         self.cur_frame = (vs_frame, vs_frame_alpha) # keep a reference to the current frame
 
-        vs_pR = np.asarray(vs_frame.get_read_array(0), dtype=np.uint8)
-        vs_pG = np.asarray(vs_frame.get_read_array(1), dtype=np.uint8)
-        vs_pB = np.asarray(vs_frame.get_read_array(2), dtype=np.uint8)
-        packed = np.full((vs_pR.shape[0], vs_pR.shape[1] * 4), 0xff, dtype=np.uint8)
-        packed[:, 2::4] = vs_pR
-        packed[:, 1::4] = vs_pG
-        packed[:, 0::4] = vs_pB
+        if 'API R4.' in vs.core.version():
+            vs_pR = np.asarray(vs_frame.get_read_array(0), dtype=np.uint8)
+            vs_pG = np.asarray(vs_frame.get_read_array(1), dtype=np.uint8)
+            vs_pB = np.asarray(vs_frame.get_read_array(2), dtype=np.uint8)
+            packed = np.full((vs_pR.shape[0], vs_pR.shape[1] * 4), 0xff, dtype=np.uint8)
+            packed[:, 2::4] = vs_pR
+            packed[:, 1::4] = vs_pG
+            packed[:, 0::4] = vs_pB
 
-        frame_image = Qt.QImage(
-            packed.ctypes.data_as(ctypes.POINTER(ctypes.c_char)).contents,
-            vs_pR.shape[1], # packed.ctypes.shape[1] // 4
-            vs_pR.shape[0], # packed.ctypes.shape[0]
-            packed.ctypes.strides[0],
-            Qt.QImage.Format_RGB32
-        )
+            frame_image = Qt.QImage(
+                packed.ctypes.data_as(ctypes.POINTER(ctypes.c_char)).contents,
+                vs_pR.shape[1], # packed.ctypes.shape[1] // 4
+                vs_pR.shape[0], # packed.ctypes.shape[0]
+                packed.ctypes.strides[0],
+                Qt.QImage.Format_RGB32
+            )
+        else:
+            # powerful spell. do not touch
+            frame_data_pointer = ctypes.cast(
+                vs_frame.get_read_ptr(0),
+                ctypes.POINTER(ctypes.c_char * (
+                    vs_frame.format.bytes_per_sample
+                    * vs_frame.width * vs_frame.height))
+            )
+            frame_image = Qt.QImage(
+                frame_data_pointer.contents, vs_frame.width, vs_frame.height,
+                vs_frame.get_stride(0), Qt.QImage.Format_RGB32)
 
         if vs_frame_alpha is None:
             return frame_image
