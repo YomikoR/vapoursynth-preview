@@ -12,6 +12,7 @@ from   PyQt5       import Qt
 from   yaml        import YAMLObject
 import vapoursynth as     vs
 
+import os
 import numpy as np
 
 # pylint: disable=function-redefined
@@ -746,8 +747,21 @@ class Output(YAMLObject):
     def prepare_vs_output(self, vs_output: vs.VideoNode, alpha: bool = False) -> vs.VideoNode:
         resizer = self.main.VS_OUTPUT_RESIZER
         api4_available = 'API R4.' in vs.core.version()
+
+        output_fmt = vs.RGB24
+        if alpha:
+            output_fmt = vs.GRAY8
+        elif os.name != 'nt':
+            output_fmt = vs.RGB30
+        elif not api4_available:
+            output_fmt = vs.COMPATBGR32
+            vs_output = vs.core.std.FlipVertical(vs_output)
+
+        if vs_output.format == output_fmt:
+            return vs_output
+
         resizer_kwargs = {
-            'format'        : vs.RGB24 if api4_available else vs.COMPATBGR32,
+            'format'        : output_fmt,
             'matrix_in_s'   : self.main.VS_OUTPUT_MATRIX,
             'transfer_in_s' : self.main.VS_OUTPUT_TRANSFER,
             'primaries_in_s': self.main.VS_OUTPUT_PRIMARIES,
@@ -756,12 +770,6 @@ class Output(YAMLObject):
             'prefer_props'  : self.main.VS_OUTPUT_PREFER_PROPS,
         }
 
-        if not alpha and not api4_available:
-            vs_output = vs.core.std.FlipVertical(vs_output)
-
-        if not api4_available and vs_output.format == vs.COMPATBGR32:  # type: ignore
-            return vs_output
-
         is_subsampled = (vs_output.format.subsampling_w != 0
                          or vs_output.format.subsampling_h != 0)
         if not is_subsampled:
@@ -769,11 +777,6 @@ class Output(YAMLObject):
 
         if vs_output.format.color_family == vs.RGB:
             del resizer_kwargs['matrix_in_s']
-
-        if alpha:
-            if vs_output.format == vs.GRAY8:  # type: ignore
-                return vs_output
-            resizer_kwargs['format'] = vs.GRAY8
 
         vs_output = resizer(vs_output, **resizer_kwargs,
                             **self.main.VS_OUTPUT_RESIZER_KWARGS)
@@ -792,7 +795,10 @@ class Output(YAMLObject):
     def render_raw_videoframe(self, vs_frame: vs.VideoFrame, vs_frame_alpha: Optional[vs.VideoFrame] = None) -> Qt.QImage:
         self.cur_frame = (vs_frame, vs_frame_alpha) # keep a reference to the current frame
 
-        if 'API R4.' in vs.core.version():
+        # The only allowed formats are now RGB24, RGB30 and COMPATBGR32
+        vs_fmt = vs_frame.format.id
+
+        if vs_fmt == vs.RGB24:
             vs_pR = np.asarray(vs_frame.get_read_array(0), dtype=np.uint8)
             vs_pG = np.asarray(vs_frame.get_read_array(1), dtype=np.uint8)
             vs_pB = np.asarray(vs_frame.get_read_array(2), dtype=np.uint8)
@@ -807,6 +813,21 @@ class Output(YAMLObject):
                 vs_pR.shape[0], # packed.ctypes.shape[0]
                 packed.ctypes.strides[0],
                 Qt.QImage.Format_RGB32
+            )
+        elif vs_fmt == vs.RGB30:
+            vs_pR = np.asarray(vs_frame.get_read_array(0), dtype=np.uint16)
+            vs_pG = np.asarray(vs_frame.get_read_array(1), dtype=np.uint16)
+            vs_pB = np.asarray(vs_frame.get_read_array(2), dtype=np.uint16)
+            packed = np.zeros((vs_pR.shape[0], vs_pR.shape[1] * 2), dtype=np.uint16)
+            packed[:, 1::2] = 0xc000 + (vs_pR << 4) + (vs_pG >> 6)
+            packed[:, 0::2] = (vs_pG << 10) + vs_pB
+
+            frame_image = Qt.QImage(
+                packed.ctypes.data_as(ctypes.POINTER(ctypes.c_char)).contents,
+                vs_pR.shape[1], # packed.ctypes.shape[1] // 2
+                vs_pR.shape[0], # packed.ctypes.shape[0]
+                packed.ctypes.strides[0],
+                Qt.QImage.Format_RGB30
             )
         else:
             # powerful spell. do not touch
