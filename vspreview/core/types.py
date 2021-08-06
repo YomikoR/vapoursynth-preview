@@ -799,33 +799,55 @@ class Output(YAMLObject):
         vs_fmt = vs_frame.format.id
 
         if vs_fmt == vs.RGB24:
-            vs_pR = np.asarray(vs_frame.get_read_array(0), dtype=np.uint8)
-            vs_pG = np.asarray(vs_frame.get_read_array(1), dtype=np.uint8)
-            vs_pB = np.asarray(vs_frame.get_read_array(2), dtype=np.uint8)
-            packed = np.full((vs_pR.shape[0], vs_pR.shape[1] * 4), 0xff, dtype=np.uint8)
-            packed[:, 2::4] = vs_pR
-            packed[:, 1::4] = vs_pG
-            packed[:, 0::4] = vs_pB
+            vs_width = vs_frame.width
+            vs_height = vs_frame.height
+
+            def np_read_plane_uint8(n):
+                pt_cast = ctypes.cast(
+                    vs_frame.get_read_ptr(n),
+                    ctypes.POINTER(ctypes.c_uint8 * vs_frame.get_stride(n) * vs_height)
+                )
+                return np.ctypeslib.as_array(pt_cast, shape=())[:, :vs_width]
+
+            plR = np_read_plane_uint8(0)
+            plG = np_read_plane_uint8(1)
+            plB = np_read_plane_uint8(2)
+
+            packed = np.full((vs_height, vs_width * 4), 0xff, dtype=np.uint8)
+            packed[:, 2::4] = plR
+            packed[:, 1::4] = plG
+            packed[:, 0::4] = plB
 
             frame_image = Qt.QImage(
                 packed.ctypes.data_as(ctypes.POINTER(ctypes.c_char)).contents,
-                vs_pR.shape[1], # packed.ctypes.shape[1] // 4
-                vs_pR.shape[0], # packed.ctypes.shape[0]
+                vs_width,
+                vs_height,
                 packed.ctypes.strides[0],
                 Qt.QImage.Format_RGB32
             )
         elif vs_fmt == vs.RGB30:
-            vs_pR = np.asarray(vs_frame.get_read_array(0), dtype=np.uint16)
-            vs_pG = np.asarray(vs_frame.get_read_array(1), dtype=np.uint16)
-            vs_pB = np.asarray(vs_frame.get_read_array(2), dtype=np.uint16)
-            packed = np.zeros((vs_pR.shape[0], vs_pR.shape[1] * 2), dtype=np.uint16)
-            packed[:, 1::2] = 0xc000 | ((vs_pR & 0x3ff) << 4) | ((vs_pG & 0x3ff) >> 6)
-            packed[:, 0::2] = ((vs_pG & 0x3ff) << 10) | (vs_pB & 0x3ff)
+            vs_width = vs_frame.width
+            vs_height = vs_frame.height
+
+            def np_read_plane_uint16(n):
+                pt_cast = ctypes.cast(
+                    vs_frame.get_read_ptr(n),
+                    ctypes.POINTER(ctypes.c_uint8 * vs_frame.get_stride(n) * vs_height)
+                )
+                return np.ctypeslib.as_array(pt_cast, shape=()).view(np.uint16)[:, :vs_width]
+
+            plR = np_read_plane_uint16(0)
+            plG = np_read_plane_uint16(1)
+            plB = np_read_plane_uint16(2)
+
+            packed = np.empty((vs_height, vs_width * 2), dtype=np.uint16)
+            packed[:, 1::2] = 0xc000 | ((plR & 0x3ff) << 4) | ((plG & 0x3ff) >> 6)
+            packed[:, 0::2] = ((plG & 0x3ff) << 10) | (plB & 0x3ff)
 
             frame_image = Qt.QImage(
                 packed.ctypes.data_as(ctypes.POINTER(ctypes.c_char)).contents,
-                vs_pR.shape[1], # packed.ctypes.shape[1] // 2
-                vs_pR.shape[0], # packed.ctypes.shape[0]
+                vs_width,
+                vs_height,
                 packed.ctypes.strides[0],
                 Qt.QImage.Format_RGB30
             )
