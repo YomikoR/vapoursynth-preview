@@ -751,7 +751,7 @@ class Output(YAMLObject):
         output_fmt = vs.RGB24
         if alpha:
             output_fmt = vs.GRAY8
-        elif os.name != 'nt':
+        elif os.name != 'nt' and Qt.QPixmap.defaultDepth() == 30:
             output_fmt = vs.RGB30
         elif not api4_available:
             output_fmt = vs.COMPATBGR32
