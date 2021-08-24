@@ -13,6 +13,7 @@ from   yaml        import YAMLObject
 import vapoursynth as     vs
 
 import os
+import sys
 import numpy as np
 
 # pylint: disable=function-redefined
@@ -798,6 +799,8 @@ class Output(YAMLObject):
         # The only allowed formats are now RGB24, RGB30 and COMPATBGR32
         vs_fmt = vs_frame.format.id
 
+        is_little_endian = (sys.byteorder == 'little')
+
         if vs_fmt == vs.RGB24:
             vs_width = vs_frame.width
             vs_height = vs_frame.height
@@ -814,9 +817,14 @@ class Output(YAMLObject):
             plB = np_read_plane_uint8(2)
 
             packed = np.full((vs_height, vs_width * 4), 0xff, dtype=np.uint8)
-            packed[:, 2::4] = plR
-            packed[:, 1::4] = plG
-            packed[:, 0::4] = plB
+            if is_little_endian:
+                packed[:, 2::4] = plR
+                packed[:, 1::4] = plG
+                packed[:, 0::4] = plB
+            else:
+                packed[:, 1::4] = plR
+                packed[:, 2::4] = plG
+                packed[:, 3::4] = plB
 
             frame_image = Qt.QImage(
                 packed.ctypes.data_as(ctypes.POINTER(ctypes.c_char)).contents,
@@ -841,8 +849,12 @@ class Output(YAMLObject):
             plB = np_read_plane_uint16(2)
 
             packed = np.empty((vs_height, vs_width * 2), dtype=np.uint16)
-            packed[:, 1::2] = 0xc000 | ((plR & 0x3ff) << 4) | ((plG & 0x3ff) >> 6)
-            packed[:, 0::2] = ((plG & 0x3ff) << 10) | (plB & 0x3ff)
+            if is_little_endian:
+                packed[:, 1::2] = 0xc000 | ((plR & 0x3ff) << 4) | ((plG & 0x3ff) >> 6)
+                packed[:, 0::2] = ((plG & 0x3ff) << 10) | (plB & 0x3ff)
+            else:
+                packed[:, 0::2] = ((plB & 0x3ff) << 6) | ((plG & 0x3ff) >> 4)
+                packed[:, 1::2] = 0x0003 | ((plR & 0x3ff) << 2) | ((plG & 0x3ff) << 12)
 
             frame_image = Qt.QImage(
                 packed.ctypes.data_as(ctypes.POINTER(ctypes.c_char)).contents,
